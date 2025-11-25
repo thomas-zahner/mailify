@@ -12,6 +12,8 @@ Mailify - identify if a mail address exists.
     3. RCPT TO
     4. DATA (probably not necessary?)
 
+TODO: Use VRFY instead?
+
 
 # Examples
 

@@ -1,4 +1,4 @@
 fn main() {
-    let result = mailify::add(1, 1);
-    println!("Result: {result}");
+    // let result = mailify::check("me@thomaszahner.ch").await;
+    // println!("Result: {result:?}");
 }
