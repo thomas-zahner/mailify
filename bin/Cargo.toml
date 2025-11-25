@@ -1,0 +1,6 @@
+[package]
+name = "bin"
+edition = "2024"
+
+[dependencies]
+mailify = { path = "../lib" }

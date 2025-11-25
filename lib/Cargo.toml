@@ -1,0 +1,5 @@
+[package]
+name = "mailify"
+edition = "2024"
+
+[dependencies]
