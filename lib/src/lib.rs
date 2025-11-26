@@ -52,7 +52,8 @@ pub async fn check(mail: &str) -> Result {
 static SENDER_ADDRESS: LazyLock<EmailAddress> =
     LazyLock::new(|| EmailAddress::new("me@thomaszahner.ch".to_owned()).unwrap());
 
-static CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::Domain("mailify".into()));
+static CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::Domain("mailify.example.com.".into()));
 
 async fn verify_mail(mail: &str, record: &MX) -> Result {
     const PORT: u16 = 25;
@@ -105,14 +106,12 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_host() {
-        let result = check("hi@unknownHost").await;
         assert!(
-            matches!(result, Err(Error::DnsResolverError(e)) if e.contains("no records found"))
+            matches!(check("hi@unknownHost").await, Err(Error::DnsResolverError(e)) if e.contains("no records found"))
         );
 
-        let result = check("hi@domainReallyDoesNotExist.org").await;
         assert!(
-            matches!(result, Err(Error::DnsResolverError(e)) if e.contains("no records found"))
+            matches!(check("hi@domainReallyDoesNotExist.org").await, Err(Error::DnsResolverError(e)) if e.contains("no records found"))
         );
     }
 
@@ -125,12 +124,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn gmail_positive() {
+    async fn gmail() {
         assert_eq!(check("thomas.zahner@gmail.com").await, Ok(()));
-    }
-
-    #[tokio::test]
-    async fn gmail_negative() {
         assert!(matches!(
             check("alice@gmail.com").await,
             Err(Error::SmtpError(_))
@@ -138,13 +133,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn protonmail_positive() {
+    async fn protonmail() {
         assert_eq!(check("thomas.zahner@protonmail.ch").await, Ok(()));
+        assert!(
+            matches!(check("a@protonmail.ch").await, Err(Error::SmtpError(e)) if e.contains("Address does not exist"))
+        );
     }
 
     #[tokio::test]
-    async fn protonmail_negative() {
-        let result = check("a@protonmail.ch").await;
-        assert!(matches!(result, Err(Error::SmtpError(e)) if e.contains("Address does not exist")));
+    async fn yandex() {
+        assert_eq!(check("thomas@yandex.com").await, Ok(()));
+        assert!(
+            matches!(check("peter@yandex.com").await, Err(Error::SmtpError(e)) if e.contains("No such user!"))
+        );
+    }
+
+    #[tokio::test]
+    async fn tuta() {
+        assert_eq!(check("hello@tutao.de").await, Ok(()));
+        assert_eq!(check("thomas@tuta.com").await, Ok(()));
+
+        let result = check("a@tuta.com").await;
+        assert!(matches!(result, Err(Error::SmtpError(e)) if e.contains("Mailbox not found")));
+    }
+
+    #[tokio::test]
+    async fn blocklisting() {
+        // assert_eq!(check("thomas@outlook.com").await, Ok(()));
+        // assert_eq!(check("thomas@hotmail.com").await, Ok(()));
+        // assert_eq!(check("thomas@bluewin.ch").await, Ok(()));
+        // assert_eq!(check("hi@icloud.com").await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn false_negatives() {
+        assert_eq!(check("thomas309f2f034590l290@yahoo.com").await, Ok(()));
+        assert_eq!(check("thomas309f2f034590l290@aol.com").await, Ok(()));
     }
 }
