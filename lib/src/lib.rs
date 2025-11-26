@@ -1,20 +1,20 @@
-use std::{
-    io::{BufRead, BufReader, Write},
-    net::TcpStream,
-    str::FromStr,
-    time::Duration,
-};
+use std::sync::LazyLock;
 
+use async_smtp::{
+    EmailAddress, SmtpClient, SmtpTransport,
+    commands::{MailCommand, RcptCommand},
+    extension::ClientId,
+};
 use hickory_resolver::{ResolveError, proto::rr::rdata::MX};
+use tokio::{io::BufStream, net::TcpStream};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    InvalidFormat,
+    InvalidAddressFormat,
     DnsResolverError(String),
+    SmtpError(String),
     IoError(String),
     NoMxRecords,
-    InvalidSmtpReply,
-    NegativeSmtpReply,
 }
 
 impl From<ResolveError> for Error {
@@ -29,63 +29,54 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<async_smtp::error::Error> for Error {
+    fn from(error: async_smtp::error::Error) -> Self {
+        Self::SmtpError(error.to_string())
+    }
+}
+
 type Result<T = ()> = std::result::Result<T, Error>;
 
 /// Check if the given email address exists
 /// and is setup to receive messages, without sending
 /// a message.
 pub async fn check(mail: &str) -> Result {
-    let (_local_part, domain) = mail.rsplit_once('@').ok_or(Error::InvalidFormat)?;
+    let (_local_part, domain) = mail.rsplit_once('@').ok_or(Error::InvalidAddressFormat)?;
 
     let records = dns_lookup(domain).await?;
-
     let record = records.first().ok_or(Error::NoMxRecords)?;
-    verify_mail(mail, record)
+
+    verify_mail(mail, record).await
 }
 
-fn verify_mail(mail: &str, record: &MX) -> Result {
+static SENDER_ADDRESS: LazyLock<EmailAddress> =
+    LazyLock::new(|| EmailAddress::new("me@thomaszahner.ch".to_owned()).unwrap());
+
+async fn verify_mail(mail: &str, record: &MX) -> Result {
     const PORT: u16 = 25;
-    const READ_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
-    const SENDER_ADDRESS: &str = "me@thomaszahner.ch";
 
     let host = record.exchange();
-    let mut stream = TcpStream::connect(format!("{host}:{PORT}"))?;
-    stream.set_read_timeout(Some(READ_WRITE_TIMEOUT))?;
+    let stream = BufStream::new(TcpStream::connect(format!("{host}:{PORT}")).await?);
+    let client = SmtpClient::new();
+    let mut transport = SmtpTransport::new(client, stream).await?;
 
-    let mut reader = BufReader::new(stream.try_clone()?);
+    transport
+        .get_mut()
+        .ehlo(ClientId::Domain("example.com.".into()))
+        .await?;
 
-    verify_positive_response(&mut reader)?;
+    transport
+        .get_mut()
+        .command(MailCommand::new(Some(SENDER_ADDRESS.clone()), vec![]))
+        .await?;
 
-    // https://www.rfc-editor.org/rfc/rfc5321.html#section-4.1.1.1
-    stream.write("HELO a\r\n".as_bytes())?;
-    verify_positive_response(&mut reader)?;
-
-    stream.write(format!("MAIL FROM:<{SENDER_ADDRESS}>\r\n").as_bytes())?;
-    verify_positive_response(&mut reader)?;
-
-    stream.write(format!("RCPT TO:<{mail}>\r\n").as_bytes())?;
-    verify_positive_response(&mut reader)?;
-
-    stream.write("QUIT\r\n".as_bytes())?;
-    verify_positive_response(&mut reader)?;
+    let mail = EmailAddress::new(mail.into()).map_err(|_| Error::InvalidAddressFormat)?;
+    transport
+        .get_mut()
+        .command(RcptCommand::new(mail, vec![]))
+        .await?;
 
     Ok(())
-}
-
-fn verify_positive_response(reader: &mut BufReader<TcpStream>) -> Result {
-    match read_response(reader)?.is_positive() {
-        true => Ok(()),
-        false => Err(Error::NegativeSmtpReply),
-    }
-}
-
-fn read_response(reader: &mut BufReader<TcpStream>) -> Result<SmtpReplyCode> {
-    let mut line = String::new();
-    reader.read_line(&mut line)?;
-
-    let (code, rest) = line.split_once(" ").ok_or(Error::InvalidSmtpReply)?;
-    dbg!(rest);
-    Ok(code.parse()?)
 }
 
 async fn dns_lookup(domain: &str) -> Result<Vec<MX>> {
@@ -101,26 +92,6 @@ async fn dns_lookup(domain: &str) -> Result<Vec<MX>> {
     Ok(records)
 }
 
-/// https://www.rfc-editor.org/rfc/rfc5321.html#section-4.2.1
-#[derive(Debug)]
-struct SmtpReplyCode(u16);
-
-impl SmtpReplyCode {
-    fn is_positive(&self) -> bool {
-        self.0 >= 200 && self.0 < 400
-    }
-}
-
-impl FromStr for SmtpReplyCode {
-    type Err = Error;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(SmtpReplyCode(
-            s.parse().map_err(|_| Error::InvalidSmtpReply)?,
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::Error;
@@ -130,15 +101,28 @@ mod tests {
     #[tokio::test]
     async fn missing_at() {
         let result = check("some text").await;
-        assert_eq!(result, Err(Error::InvalidFormat));
+        assert_eq!(result, Err(Error::InvalidAddressFormat));
+    }
+
+    #[tokio::test]
+    async fn unknown_host() {
+        let result = check("hi@unknownHost").await;
+        assert!(
+            matches!(result, Err(Error::DnsResolverError(e)) if e.contains("no records found"))
+        );
+
+        let result = check("hi@domainReallyDoesNotExist.org").await;
+        assert!(
+            matches!(result, Err(Error::DnsResolverError(e)) if e.contains("no records found"))
+        );
     }
 
     #[tokio::test]
     async fn detects_my_domain_as_invalid() {
-        assert_eq!(
+        assert!(matches!(
             check("me@thomaszahner.ch").await,
-            Err(Error::NegativeSmtpReply)
-        );
+            Err(Error::SmtpError(_))
+        ));
     }
 
     #[tokio::test]
@@ -148,10 +132,9 @@ mod tests {
 
     #[tokio::test]
     async fn gmail_negative() {
-        // TODO: fix me
-        assert_eq!(
-            check("l1o89oc92fl134x7@gmail.com").await,
-            Err(Error::NegativeSmtpReply)
-        );
+        assert!(matches!(
+            check("alice@gmail.com").await,
+            Err(Error::SmtpError(_))
+        ),);
     }
 }
