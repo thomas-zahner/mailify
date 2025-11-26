@@ -52,6 +52,8 @@ pub async fn check(mail: &str) -> Result {
 static SENDER_ADDRESS: LazyLock<EmailAddress> =
     LazyLock::new(|| EmailAddress::new("me@thomaszahner.ch".to_owned()).unwrap());
 
+static CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::Domain("mailify".into()));
+
 async fn verify_mail(mail: &str, record: &MX) -> Result {
     const PORT: u16 = 25;
 
@@ -60,10 +62,7 @@ async fn verify_mail(mail: &str, record: &MX) -> Result {
     let client = SmtpClient::new();
     let mut transport = SmtpTransport::new(client, stream).await?;
 
-    transport
-        .get_mut()
-        .ehlo(ClientId::Domain("example.com.".into()))
-        .await?;
+    transport.get_mut().ehlo(CLIENT_ID.clone()).await?;
 
     transport
         .get_mut()
@@ -136,5 +135,16 @@ mod tests {
             check("alice@gmail.com").await,
             Err(Error::SmtpError(_))
         ),);
+    }
+
+    #[tokio::test]
+    async fn protonmail_positive() {
+        assert_eq!(check("thomas.zahner@protonmail.ch").await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn protonmail_negative() {
+        let result = check("a@protonmail.ch").await;
+        assert!(matches!(result, Err(Error::SmtpError(e)) if e.contains("Address does not exist")));
     }
 }
