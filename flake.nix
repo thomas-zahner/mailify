@@ -38,7 +38,6 @@
         {
           default = pkgs.mkShell {
             packages = [
-              #pkgs.pkg-config
               rust
             ];
           };

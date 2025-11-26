@@ -1,0 +1,12 @@
+name: Tests
+on: [push]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Do not depend on openssl
+        run: test -z "$( cargo tree --prefix none | grep openssl )"
+      - name: Test
+        run: cargo test
