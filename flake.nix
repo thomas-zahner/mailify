@@ -8,7 +8,6 @@
     {
       nixpkgs,
       rust-overlay,
-      self,
       ...
     }:
     let

@@ -41,7 +41,11 @@ type Result<T = ()> = std::result::Result<T, Error>;
 /// and is setup to receive messages, without sending
 /// a message.
 pub async fn check(mail: &str) -> Result {
-    let (_local_part, domain) = mail.rsplit_once('@').ok_or(Error::InvalidAddressFormat)?;
+    let (local_part, domain) = mail.rsplit_once('@').ok_or(Error::InvalidAddressFormat)?;
+
+    if local_part.is_empty() || domain.is_empty() {
+        return Err(Error::InvalidAddressFormat);
+    }
 
     let records = dns_lookup(domain).await?;
     let record = records.first().ok_or(Error::NoMxRecords)?;
@@ -99,9 +103,11 @@ mod tests {
     use super::check;
 
     #[tokio::test]
-    async fn missing_at() {
-        let result = check("some text").await;
-        assert_eq!(result, Err(Error::InvalidAddressFormat));
+    async fn invalid_format() {
+        assert_eq!(check("some text").await, Err(Error::InvalidAddressFormat));
+        assert_eq!(check("@").await, Err(Error::InvalidAddressFormat));
+        assert_eq!(check("local-part@").await, Err(Error::InvalidAddressFormat));
+        assert_eq!(check("@domain").await, Err(Error::InvalidAddressFormat));
     }
 
     #[tokio::test]
