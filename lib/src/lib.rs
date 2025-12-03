@@ -1,9 +1,12 @@
 use std::{sync::LazyLock, time::Duration};
 
+pub(crate) mod heuristics;
+
 use async_smtp::{
     EmailAddress, SmtpClient, SmtpTransport,
     commands::{MailCommand, RcptCommand},
     extension::ClientId,
+    response::Response,
 };
 use hickory_resolver::{ResolveError, proto::rr::rdata::MX};
 use tokio::{io::BufStream, net::TcpStream, time::timeout};
@@ -22,6 +25,7 @@ pub enum CheckResult {
 impl From<Result> for CheckResult {
     fn from(result: Result) -> Self {
         use CheckResult::*;
+        use async_smtp::error::Error::*;
         match result {
             Ok(()) => Success,
             Err(error) => match error {
@@ -30,32 +34,14 @@ impl From<Result> for CheckResult {
                     if e.is_no_records_found() {
                         Failure(FailureReason::NoMxRecords)
                     } else {
-                        todo!("{e:?}")
+                        Uncertain(UncertaintyReason::DnsResolverError)
                     }
                 }
                 Error::SmtpError(e) => match e {
-                    async_smtp::error::Error::Transient(_) => {
-                        Uncertain(UncertaintyReason::TransientResponse)
-                    }
-                    async_smtp::error::Error::Permanent(response) => {
-                        dbg!(&response);
-                        let is_blocklisted = response
-                            .message
-                            .iter()
-                            .map(|line| line.to_lowercase())
-                            .any(|line| line.contains("listing") || line.contains("spam"));
-
-                        if is_blocklisted {
-                            return Uncertain(UncertaintyReason::Blocklisted);
-                        }
-
-                        if !response.is_positive() {
-                            Failure(FailureReason::NoSuchAddress)
-                        } else {
-                            todo!("permanent positive error response?")
-                        }
-                    }
-                    _ => todo!("{e:?}"),
+                    Transient(r) => Uncertain(UncertaintyReason::NegativeSmtpResponse(r)),
+                    Permanent(r) => heuristics::handle_permanent(r),
+                    Timeout(_) => Uncertain(UncertaintyReason::Timeout),
+                    e => Uncertain(UncertaintyReason::SmtpError(e.to_string())),
                 },
                 Error::IoError(e) => todo!("{e:?}"),
                 Error::NoMxRecords => Failure(FailureReason::NoMxRecords),
@@ -77,8 +63,12 @@ pub enum UncertaintyReason {
     /// Server blocklisted our request.
     /// This normally happens because the server doesn't trust our IP address.
     Blocklisted,
-    /// Got a non-permanent SMTP response, which might change upon retry
-    TransientResponse,
+    /// Got a negative SMTP response
+    NegativeSmtpResponse(Response),
+    /// Unexpected SMTP error
+    SmtpError(String),
+    /// Unexpected DNS resolution error
+    DnsResolverError,
 }
 
 #[derive(Debug, PartialEq)]
@@ -143,18 +133,21 @@ async fn check_inner(mail: &str) -> Result {
         .map_err(|_| Error::Timeout)?
 }
 
+/// Mail servers may respond with
+///
+/// - `4.1.8 Sender address rejected` (https://www.suped.com/knowledge/email-deliverability/troubleshooting/what-does-smtp-bounce-reason-418-bad-senders-system-address-domain-of-sender-address-does-not-re)
+/// - `5.7.27 Sender address has null MX` (https://www.rfc-editor.org/rfc/rfc7505#section-4.2)
+/// - SPF rejection as per https://www.rfc-editor.org/rfc/rfc7208
 static SENDER_ADDRESS: LazyLock<EmailAddress> =
     LazyLock::new(|| EmailAddress::new("me@thomaszahner.ch".to_owned()).unwrap());
 
-static CLIENT_ID: LazyLock<ClientId> =
-    LazyLock::new(|| ClientId::Domain("mailify.example.com.".into()));
+static CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::Domain("example.com.".into()));
 
 async fn verify_mail(mail: &str, record: &MX) -> Result {
     const PORT: u16 = 25;
 
     let host = record.exchange();
     let stream = BufStream::new(TcpStream::connect(format!("{host}:{PORT}")).await?);
-    dbg!("didn't reach here with wifi hotspot");
     let client = SmtpClient::new();
     let mut transport = SmtpTransport::new(client, stream).await?;
 
@@ -273,15 +266,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn blocklisting() {
-        // assert_eq!(check("thomas@outlook.com").await, CheckResult::Success);
-        // assert_eq!(check("thomas@hotmail.com").await, CheckResult::Success);
-        assert_eq!(
-            check("thomas@bluewin.ch").await,
-            CheckResult::Uncertain(UncertaintyReason::Blocklisted)
-        );
+    async fn icloud() {
+        assert_eq!(check("thomas1@icloud.com").await, CheckResult::Success);
+
         assert_eq!(
             check("hi@icloud.com").await,
+            CheckResult::Failure(FailureReason::NoSuchAddress)
+        );
+
+        // 5.1.6 user no longer on system:peter@icloud.com
+        assert_eq!(
+            check("peter@icloud.com").await,
+            CheckResult::Failure(FailureReason::NoSuchAddress)
+        );
+
+        // this is intentially considered `Uncertain`
+        // 5.2.2 <thomas@icloud.com>: user is over quota
+        assert!(matches!(
+            check("thomas@icloud.com").await,
+            CheckResult::Uncertain(UncertaintyReason::NegativeSmtpResponse(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn blocklisting() {
+        assert!(matches!(
+            check("thomas@outlook.com").await,
+            CheckResult::Uncertain(UncertaintyReason::NegativeSmtpResponse(_))
+        ));
+
+        assert!(matches!(
+            check("thomas@hotmail.com").await,
+            CheckResult::Uncertain(UncertaintyReason::NegativeSmtpResponse(_))
+        ));
+
+        assert_eq!(
+            check("thomas@bluewin.ch").await,
             CheckResult::Uncertain(UncertaintyReason::Blocklisted)
         );
     }
