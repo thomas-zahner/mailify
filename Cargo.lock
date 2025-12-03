@@ -46,6 +46,7 @@ name = "bin"
 version = "0.0.0"
 dependencies = [
  "mailify",
+ "tokio",
 ]
 
 [[package]]

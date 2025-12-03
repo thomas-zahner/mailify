@@ -116,8 +116,8 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 /// Check if the given email address exists
 /// and is setup to receive messages, without sending
 /// a message.
-pub async fn check(mail: &str) -> CheckResult {
-    check_inner(mail).await.into()
+pub async fn check(address: &str) -> CheckResult {
+    check_inner(address).await.into()
 }
 
 async fn check_inner(mail: &str) -> Result {
