@@ -4,41 +4,44 @@ use crate::{CheckResult, FailureReason, UncertaintyReason};
 
 const BLACKLIST_WORDS: &[&str] = &["listing", "spam", "block"];
 
-/// Inexistent destination address per [RFC3463](https://www.rfc-editor.org/rfc/rfc3463#section-3.2)
-const BAD_MAILBOX_ADDRESS: &str = "5.1.1";
-const BAD_SYSTEM_ADDRESS: &str = "5.1.2";
-const BAD_SYSTEM_ADDRESS_SYNTAX: &str = "5.1.3";
-const MAILBOX_MOVED: &str = "5.1.6";
-const MAILBOX_DISABLED: &str = "5.2.1";
+/// Inexistent mailbox per [RFC3463](https://www.rfc-editor.org/rfc/rfc3463#section-3.2)
+const MAILBOX_INEXISTENT_CODES: &[&str] = &["5.1.1", "5.1.2", "5.1.3", "5.1.6", "5.2.1"];
+
+/// Transient or permanent failure indicating that the mailbox exists
+/// per [RFC3463](https://www.rfc-editor.org/rfc/rfc3463#section-3.2).
+const MAILBOX_EXISTENT_CODES: &[&str] = &[
+    "4.2.0", "4.2.1", "4.2.2", // transient
+    "5.2.0", "5.2.1", "5.2.2", // permanent
+];
 
 const NO_SUCH_ADDRESS_WORDS: &[&str] = &[
-    // if the service follows RFC3463
-    BAD_MAILBOX_ADDRESS,
-    BAD_SYSTEM_ADDRESS,
-    BAD_SYSTEM_ADDRESS_SYNTAX,
-    MAILBOX_MOVED,
-    MAILBOX_DISABLED,
-    // otherwise fall back on textual heuristics
     "address does not exist",
     "no such user",
     "no such address",
     "user does not exist",
+    "user unknown",
     "mailbox not found",
     "recipient address rejected",
     "account that you tried to reach does not exist",
     "double-checking the recipient",
 ];
 
-/// Note: this handles permanent failures. (e.g. 5.2.1 and not transient 4.2.1)
-pub(crate) fn handle_permanent(response: Response) -> CheckResult {
+pub(crate) fn handle(response: Response) -> CheckResult {
     use CheckResult::*;
     if blocklisted(&response) {
         Uncertain(UncertaintyReason::Blocklisted)
     } else if no_such_address(&response) {
         Failure(FailureReason::NoSuchAddress)
+    } else if exists(&response) {
+        Success
     } else {
         Uncertain(UncertaintyReason::NegativeSmtpResponse(response))
     }
+}
+
+/// A failure response that indicates that the targeted mailbox exists
+fn exists(response: &Response) -> bool {
+    message_contains_word(&response.message, &MAILBOX_EXISTENT_CODES)
 }
 
 fn blocklisted(response: &Response) -> bool {
@@ -48,7 +51,12 @@ fn blocklisted(response: &Response) -> bool {
 fn no_such_address(response: &Response) -> bool {
     mailbox_unavailable(response) &&
     // rule out "no access, or command rejected for policy reasons"
-    message_contains_word(&response.message, NO_SUCH_ADDRESS_WORDS)
+    (
+        // if the service follows RFC3463
+        message_contains_word(&response.message, MAILBOX_INEXISTENT_CODES) ||
+        // otherwise fall back on textual heuristics
+        message_contains_word(&response.message, NO_SUCH_ADDRESS_WORDS)
+    )
 }
 
 /// [RFC5321](https://www.rfc-editor.org/rfc/rfc5321.html#section-4.2.3):

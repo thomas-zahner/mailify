@@ -38,8 +38,7 @@ impl From<Result> for CheckResult {
                     }
                 }
                 Error::SmtpError(e) => match e {
-                    Transient(r) => Uncertain(UncertaintyReason::NegativeSmtpResponse(r)),
-                    Permanent(r) => heuristics::handle_permanent(r),
+                    Transient(r) | Permanent(r) => heuristics::handle(r),
                     Timeout(_) => Uncertain(UncertaintyReason::Timeout),
                     e => Uncertain(UncertaintyReason::SmtpError(e.to_string())),
                 },
@@ -57,8 +56,9 @@ impl From<Result> for CheckResult {
 #[derive(Debug, PartialEq)]
 pub enum UncertaintyReason {
     /// Request timed out.
-    /// A common (not very nice) practice of blocklisting from mail servers
-    /// is to not send any reply. So it is probable that we got blocklisted.
+    /// Unfortunately, ISPs commonly block outgoing port 25 traffic from their customers.
+    /// If you see timeouts for different domains this is the most probable issue.
+    /// You could try a different ISP, e.g. by using a VPN.
     Timeout,
     /// Server blocklisted our request.
     /// This normally happens because the server doesn't trust our IP address.
@@ -286,6 +286,15 @@ mod tests {
             check("thomas@icloud.com").await,
             CheckResult::Uncertain(UncertaintyReason::NegativeSmtpResponse(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn endler() {
+        assert_eq!(check("matthias@endler.dev").await, CheckResult::Success);
+        assert_eq!(
+            check("idiomatic-rust-doesnt-exist-man@endler.dev").await,
+            CheckResult::Failure(FailureReason::NoSuchAddress)
+        );
     }
 
     #[tokio::test]
