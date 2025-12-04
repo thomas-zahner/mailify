@@ -42,7 +42,7 @@ impl From<Result> for CheckResult {
                     Timeout(_) => Uncertain(UncertaintyReason::Timeout),
                     e => Uncertain(UncertaintyReason::SmtpError(e.to_string())),
                 },
-                Error::IoError(e) => todo!("{e:?}"),
+                Error::IoError(e) => Failure(FailureReason::IoError(e.to_string())),
                 Error::NoMxRecords => Failure(FailureReason::NoMxRecords),
                 Error::Timeout => Uncertain(UncertaintyReason::Timeout),
             },
@@ -79,6 +79,8 @@ pub enum FailureReason {
     NoMxRecords,
     /// The mail server does not accept the address
     NoSuchAddress,
+    /// Generic IO error
+    IoError(String),
 }
 
 #[derive(Debug)]
@@ -280,7 +282,7 @@ mod tests {
             CheckResult::Failure(FailureReason::NoSuchAddress)
         );
 
-        // this is intentially considered `Uncertain`
+        // this is intentionally considered `Uncertain`
         // 5.2.2 <thomas@icloud.com>: user is over quota
         assert!(matches!(
             check("thomas@icloud.com").await,
@@ -294,6 +296,15 @@ mod tests {
         assert_eq!(
             check("idiomatic-rust-doesnt-exist-man@endler.dev").await,
             CheckResult::Failure(FailureReason::NoSuchAddress)
+        );
+    }
+
+    #[tokio::test]
+    async fn example() {
+        // todo: make test pass
+        assert_eq!(
+            check("hello@example.com").await,
+            CheckResult::Failure(FailureReason::NoMxRecords)
         );
     }
 
