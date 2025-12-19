@@ -169,15 +169,24 @@ async fn verify_mail(mail: &str, record: &MX) -> Result {
     Ok(())
 }
 
+/// Get the first
 async fn first_dns_record(domain: &str) -> Result<MX> {
-    lookup_dns(domain)
+    let mx = lookup_mx(domain)
         .await?
         .first()
         .cloned()
-        .ok_or(Error::NoMxRecords)
+        .ok_or(Error::NoMxRecords)?;
+
+    if mx.exchange().is_root() {
+        // trying to connect "." will always fail
+        Err(Error::NoMxRecords)
+    } else {
+        Ok(mx)
+    }
 }
 
-async fn lookup_dns(domain: &str) -> Result<Vec<MX>> {
+/// Get all MX records, sorted by preference
+async fn lookup_mx(domain: &str) -> Result<Vec<MX>> {
     let mut records: Vec<_> = hickory_resolver::Resolver::builder_tokio()?
         .build()
         .mx_lookup(domain)
@@ -301,7 +310,6 @@ mod tests {
 
     #[tokio::test]
     async fn example() {
-        // todo: make test pass
         assert_eq!(
             check("hello@example.com").await,
             CheckResult::Failure(FailureReason::NoMxRecords)
