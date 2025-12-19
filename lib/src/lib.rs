@@ -169,29 +169,27 @@ async fn verify_mail(mail: &str, record: &MX) -> Result {
     Ok(())
 }
 
-/// Get the first
+/// Get MX record with the highest preference
 async fn first_dns_record(domain: &str) -> Result<MX> {
-    let mx = lookup_mx(domain)
+    Ok(lookup_mx(domain)
         .await?
         .first()
         .cloned()
-        .ok_or(Error::NoMxRecords)?;
-
-    if mx.exchange().is_root() {
-        // trying to connect "." will always fail
-        Err(Error::NoMxRecords)
-    } else {
-        Ok(mx)
-    }
+        .ok_or(Error::NoMxRecords)?)
 }
 
-/// Get all MX records, sorted by preference
+/// Get all usable MX records, sorted by preference.
+/// Returns only non-root FQDN records.
 async fn lookup_mx(domain: &str) -> Result<Vec<MX>> {
     let mut records: Vec<_> = hickory_resolver::Resolver::builder_tokio()?
         .build()
         .mx_lookup(domain)
         .await?
         .into_iter()
+        // Only resolvable, fully-qualified domain names (FQDNs) are permitted when domain names are used in SMTP.
+        // Source: https://datatracker.ietf.org/doc/html/rfc5321#section-2.3.5
+        .filter(|r| r.exchange().is_fqdn())
+        .filter(|r| !r.exchange().is_root()) // trying to connect "." will always fail
         .collect();
 
     records.sort_by_key(|r| r.preference());
