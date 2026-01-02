@@ -27,7 +27,7 @@ const NO_SUCH_ADDRESS_WORDS: &[&str] = &[
 ];
 
 pub(crate) fn handle(response: Response) -> CheckResult {
-    use CheckResult::*;
+    use CheckResult::{Failure, Success, Uncertain};
     if blocklisted(&response) {
         Uncertain(UncertaintyReason::Blocklisted)
     } else if no_such_address(&response) {

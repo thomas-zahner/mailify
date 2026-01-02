@@ -8,5 +8,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Do not depend on openssl
         run: test -z "$( cargo tree --prefix none | grep openssl )"
-      - name: Test
-        run: cargo test
+      - name: Lint & test
+        run: |
+          cargo clippy -- -D warnings
+          cargo test

@@ -1,3 +1,8 @@
+//! mailify - identify if a mail address exists.
+//! This is the binary executable of mailify.
+
+#![warn(clippy::all, clippy::pedantic)]
+
 use std::env::args;
 
 use mailify::check;

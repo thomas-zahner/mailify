@@ -1,4 +1,4 @@
-Mailify - identify if a mail address exists.
+mailify - identify if a mail address exists.
 
 # How does it work?
 

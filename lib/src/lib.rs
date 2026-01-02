@@ -1,3 +1,8 @@
+//! mailify - identify if a mail address exists.
+//! This is the library component of mailify.
+
+#![warn(clippy::all, clippy::pedantic)]
+
 use std::{sync::LazyLock, time::Duration};
 
 pub(crate) mod heuristics;
@@ -24,8 +29,8 @@ pub enum CheckResult {
 
 impl From<Result> for CheckResult {
     fn from(result: Result) -> Self {
-        use CheckResult::*;
-        use async_smtp::error::Error::*;
+        use CheckResult::{Failure, Success, Uncertain};
+        use async_smtp::error::Error::{Permanent, Timeout, Transient};
         match result {
             Ok(()) => Success,
             Err(error) => match error {
@@ -137,9 +142,9 @@ async fn check_inner(mail: &str) -> Result {
 
 /// Mail servers may respond with
 ///
-/// - `4.1.8 Sender address rejected` (https://www.suped.com/knowledge/email-deliverability/troubleshooting/what-does-smtp-bounce-reason-418-bad-senders-system-address-domain-of-sender-address-does-not-re)
-/// - `5.7.27 Sender address has null MX` (https://www.rfc-editor.org/rfc/rfc7505#section-4.2)
-/// - SPF rejection as per https://www.rfc-editor.org/rfc/rfc7208
+/// - `4.1.8 Sender address rejected` (<https://www.suped.com/knowledge/email-deliverability/troubleshooting/what-does-smtp-bounce-reason-418-bad-senders-system-address-domain-of-sender-address-does-not-re>)
+/// - `5.7.27 Sender address has null MX` (<https://www.rfc-editor.org/rfc/rfc7505#section-4.2>)
+/// - SPF rejection as per <https://www.rfc-editor.org/rfc/rfc7208>
 static SENDER_ADDRESS: LazyLock<EmailAddress> =
     LazyLock::new(|| EmailAddress::new("me@thomaszahner.ch".to_owned()).unwrap());
 
@@ -192,7 +197,7 @@ async fn lookup_mx(domain: &str) -> Result<Vec<MX>> {
         .filter(|r| !r.exchange().is_root()) // trying to connect "." will always fail
         .collect();
 
-    records.sort_by_key(|r| r.preference());
+    records.sort_by_key(MX::preference);
 
     Ok(records)
 }
