@@ -30,19 +30,19 @@ impl From<Result> for CheckResult {
             Ok(()) => Success,
             Err(error) => match error {
                 Error::InvalidAddressFormat => Failure(FailureReason::InvalidAddressFormat),
-                Error::DnsResolverError(e) => {
+                Error::DnsResolution(e) => {
                     if e.is_no_records_found() {
                         Failure(FailureReason::NoMxRecords)
                     } else {
                         Uncertain(UncertaintyReason::DnsResolverError)
                     }
                 }
-                Error::SmtpError(e) => match e {
+                Error::Smtp(e) => match e {
                     Transient(r) | Permanent(r) => heuristics::handle(r),
                     Timeout(_) => Uncertain(UncertaintyReason::Timeout),
                     e => Uncertain(UncertaintyReason::SmtpError(e.to_string())),
                 },
-                Error::IoError(e) => Failure(FailureReason::IoError(e.to_string())),
+                Error::Io(e) => Failure(FailureReason::IoError(e.to_string())),
                 Error::NoMxRecords => Failure(FailureReason::NoMxRecords),
                 Error::Timeout => Uncertain(UncertaintyReason::Timeout),
             },
@@ -58,7 +58,7 @@ pub enum UncertaintyReason {
     /// Request timed out.
     /// Unfortunately, ISPs commonly block outgoing port 25 traffic from their customers.
     /// If you see timeouts for different domains this is the most probable issue.
-    /// You could try a different ISP, e.g. by using a VPN.
+    /// You could try a different ISP, e.g. by using a VPN or switching the network.
     Timeout,
     /// Server blocklisted our request.
     /// This normally happens because the server doesn't trust our IP address.
@@ -86,28 +86,28 @@ pub enum FailureReason {
 #[derive(Debug)]
 enum Error {
     InvalidAddressFormat,
-    DnsResolverError(ResolveError),
-    SmtpError(async_smtp::error::Error),
-    IoError(std::io::Error),
+    DnsResolution(ResolveError),
+    Smtp(async_smtp::error::Error),
+    Io(std::io::Error),
     NoMxRecords,
     Timeout,
 }
 
 impl From<ResolveError> for Error {
     fn from(error: ResolveError) -> Self {
-        Self::DnsResolverError(error)
+        Self::DnsResolution(error)
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
-        Self::IoError(error)
+        Self::Io(error)
     }
 }
 
 impl From<async_smtp::error::Error> for Error {
     fn from(error: async_smtp::error::Error) -> Self {
-        Self::SmtpError(error)
+        Self::Smtp(error)
     }
 }
 
@@ -171,11 +171,11 @@ async fn verify_mail(mail: &str, record: &MX) -> Result {
 
 /// Get MX record with the highest preference
 async fn first_dns_record(domain: &str) -> Result<MX> {
-    Ok(lookup_mx(domain)
+    lookup_mx(domain)
         .await?
         .first()
         .cloned()
-        .ok_or(Error::NoMxRecords)?)
+        .ok_or(Error::NoMxRecords)
 }
 
 /// Get all usable MX records, sorted by preference.

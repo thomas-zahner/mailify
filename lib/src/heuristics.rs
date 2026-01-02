@@ -41,11 +41,11 @@ pub(crate) fn handle(response: Response) -> CheckResult {
 
 /// A failure response that indicates that the targeted mailbox exists
 fn exists(response: &Response) -> bool {
-    message_contains_word(&response.message, &MAILBOX_EXISTENT_CODES)
+    message_contains_word(&response.message, MAILBOX_EXISTENT_CODES)
 }
 
 fn blocklisted(response: &Response) -> bool {
-    message_contains_word(&response.message, &BLACKLIST_WORDS)
+    message_contains_word(&response.message, BLACKLIST_WORDS)
 }
 
 fn no_such_address(response: &Response) -> bool {
@@ -63,13 +63,12 @@ fn no_such_address(response: &Response) -> bool {
 /// 550  Requested action not taken: mailbox unavailable (e.g., mailbox
 /// not found, no access, or command rejected for policy reasons)
 fn mailbox_unavailable(response: &Response) -> bool {
-    let mailbox_unavailable = response.code.severity == Severity::PermanentNegativeCompletion
+    response.code.severity == Severity::PermanentNegativeCompletion
         && response.code.category == Category::MailSystem
-        && response.code.detail == Detail::Zero;
-    mailbox_unavailable
+        && response.code.detail == Detail::Zero
 }
 
-fn message_contains_word(message: &Vec<String>, words: &[&str]) -> bool {
+fn message_contains_word(message: &[String], words: &[&str]) -> bool {
     message
         .iter()
         .map(|line| line.to_lowercase())
