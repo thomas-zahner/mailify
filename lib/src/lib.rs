@@ -43,7 +43,7 @@ impl From<Result> for CheckResult {
                     }
                 }
                 Error::Smtp(e) => match e {
-                    Transient(r) | Permanent(r) => heuristics::handle(r),
+                    Transient(r) | Permanent(r) => heuristics::from_error(r),
                     Timeout(_) => Uncertain(UncertaintyReason::Timeout),
                     e => Uncertain(UncertaintyReason::SmtpError(e.to_string())),
                 },

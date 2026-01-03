@@ -7,13 +7,6 @@ const BLACKLIST_WORDS: &[&str] = &["listing", "spam", "block"];
 /// Inexistent mailbox per [RFC3463](https://www.rfc-editor.org/rfc/rfc3463#section-3.2)
 const MAILBOX_INEXISTENT_CODES: &[&str] = &["5.1.1", "5.1.2", "5.1.3", "5.1.6", "5.2.1"];
 
-/// Transient or permanent failure indicating that the mailbox exists
-/// per [RFC3463](https://www.rfc-editor.org/rfc/rfc3463#section-3.2).
-const MAILBOX_EXISTENT_CODES: &[&str] = &[
-    "4.2.0", "4.2.1", "4.2.2", // transient
-    "5.2.0", "5.2.1", "5.2.2", // permanent
-];
-
 const NO_SUCH_ADDRESS_WORDS: &[&str] = &[
     "address does not exist",
     "no such user",
@@ -26,8 +19,9 @@ const NO_SUCH_ADDRESS_WORDS: &[&str] = &[
     "double-checking the recipient",
 ];
 
-pub(crate) fn handle(response: Response) -> CheckResult {
-    use CheckResult::{Failure, Success, Uncertain};
+/// Handle transient and permanent error responses
+pub(crate) fn from_error(response: Response) -> CheckResult {
+    use CheckResult::*;
     if blocklisted(&response) {
         Uncertain(UncertaintyReason::Blocklisted)
     } else if no_such_address(&response) {
@@ -39,9 +33,21 @@ pub(crate) fn handle(response: Response) -> CheckResult {
     }
 }
 
-/// A failure response that indicates that the targeted mailbox exists
+/// Whether a failure response indicates that the targeted mailbox exists
 fn exists(response: &Response) -> bool {
-    message_contains_word(&response.message, MAILBOX_EXISTENT_CODES)
+    // Transient or permanent failure indicating that the mailbox exists
+    // per [RFC3463](https://www.rfc-editor.org/rfc/rfc3463#section-3.3):
+    //
+    // "X.2.0": The mailbox exists, but [...]
+    // "X.2.1": Mailbox disabled, not accepting messages
+    // "X.2.2": Mailbox full
+
+    let code = response.code;
+    matches!(
+        code.severity,
+        Severity::TransientNegativeCompletion | Severity::PermanentNegativeCompletion
+    ) && code.category == Category::Connections
+        && matches!(code.detail, Detail::Zero | Detail::One | Detail::Two)
 }
 
 fn blocklisted(response: &Response) -> bool {
