@@ -11,11 +11,21 @@ mailify - identify if a mail address exists.
 
 # State of SMTP
 
-There is `550` and `5.1.1` for "mailbox unavailable" we can use to detect if an address exists.
-`550` is defined in [RFC 5321](https://www.rfc-editor.org/rfc/rfc5321.html#section-4.2.3),
-`5.1.1` is defined in [RFC 3463](https://www.rfc-editor.org/rfc/rfc3463#section-3.2).
+Figuring out if a given address exists with SMTP is rather straight forward.
+Unfortunately, in the real world there are two main deterrents which can prevent us to do so:
+port filtering by ISPs and blocklisting by mail servers.
+This means that if you are using the "wrong" ISP or if your IP address is
+not considered "trustworthy" enough by the mail server,
+you will be prevented from obtaining any useful information.
 
-TODO: in practice RFC 3463 is not always followed
+These two mechanisms exist to prevent spam.
+Whether it is justified to severely limit the capabilities and usefulness of a protocol is debatable.
+
+mailify does not propose a solution to circumvent these problems.
+However, mailify aims to be accurate even if you are affected by these deterrents.
+This is achieved by introducing the variant `Uncertain` to `CheckResult`.
+So for example if you are blocklisted mailify will not return `Success` or `Failure`,
+but `Uncertain`.
 
 ## Port filtering
 
@@ -30,4 +40,13 @@ mailify will timeout on checking and will report `CheckResult::Uncertain(Uncerta
 
 ## Blocklisting
 
-TODO.
+If your ISP doesn't filter or block your connection to mail servers,
+you might still be blocked by the mail server itself.
+Mail servers might block you based on your IP address or other metrics.
+There are companies which offer blocklist software such as [abusix](https://abusix.com/)
+and [Spamhaus](https://www.spamhaus.org/blocklists/).
+This is somewhat comparable to the Cloudflare for HTTP.
+However, Cloudflare rarely bans access to a website and if it does,
+there is mostly a possibility to solve a CAPTCHA challenge to disable the ban.
+In SMTP land, if you are blocklisted the ban is often permanent.
+If you are lucky, you might be offered a link to request an unban from the blocklising service.
