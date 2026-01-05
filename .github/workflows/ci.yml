@@ -11,4 +11,9 @@ jobs:
       - name: Lint & test
         run: |
           cargo clippy -- -D warnings
-          cargo test
+          # Skip tests affected by blocklisting on GitHub runners
+          cargo test -- \
+            --skip detects_my_domain_as_invalid \
+            --skip endler \
+            --skip tuta \
+            --skip icloud
