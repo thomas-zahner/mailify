@@ -43,7 +43,7 @@ impl From<Result> for CheckResult {
                     }
                 }
                 Error::Smtp(e) => match e {
-                    Transient(r) | Permanent(r) => heuristics::from_error(r),
+                    Transient(r) | Permanent(r) => heuristics::from_erroneous(r),
                     Timeout(_) => Uncertain(UncertaintyReason::Timeout),
                     e => Uncertain(UncertaintyReason::SmtpError(e.to_string())),
                 },
@@ -339,7 +339,8 @@ mod tests {
 
     #[tokio::test]
     async fn false_negatives() {
-        // TODO?
+        // TODO? These are addresses that shoud ideally be detected as invalid.
+        // But it might be impossible if the services don't properly follow SMTP.
         assert_eq!(
             check("a309f2f034590l290@yahoo.com").await,
             CheckResult::Success
