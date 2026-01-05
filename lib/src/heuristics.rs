@@ -3,12 +3,24 @@ use async_smtp::response::{Category, Detail, Response, Severity};
 use crate::{CheckResult, FailureReason, UncertaintyReason};
 
 /// Textual heuristics to detect blocklisting
-const BLOCKLIST_WORDS: &[&str] = &["listing", "spam", "block"];
+const BLOCKLIST_WORDS: &[&str] = &[
+    "blocklist",
+    "blacklist",
+    "greylist",
+    "listing",
+    "spam",
+    "abuse",
+    "blocked",
+    // Companies
+    "proofpoint",
+    "spamhaus",
+    "abusix",
+];
 
 /// Inexistent mailbox per [RFC3463](https://www.rfc-editor.org/rfc/rfc3463#section-3.2)
 const MAILBOX_INEXISTENT_CODES: &[&str] = &["5.1.1", "5.1.2", "5.1.3", "5.1.6", "5.2.1"];
 
-/// Textual heuristics used when RFC3463 isn't followed
+/// Textual heuristics for when RFC3463 doesn't suffice
 const NO_SUCH_ADDRESS_WORDS: &[&str] = &[
     "address does not exist",
     "no such user",
@@ -60,7 +72,8 @@ fn no_such_address(response: &Response) -> bool {
     mailbox_unavailable(response) &&
     // rule out "no access, or command rejected for policy reasons"
     (
-        // if the service follows RFC3463
+        // if the service follows RFC3463 and the code clearly indicates
+        // the absence of the recipient address
         message_contains_word(&response.message, MAILBOX_INEXISTENT_CODES) ||
         // otherwise fall back on textual heuristics
         message_contains_word(&response.message, NO_SUCH_ADDRESS_WORDS)
