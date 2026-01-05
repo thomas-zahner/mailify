@@ -1,6 +1,13 @@
 [package]
-name = "mailify"
+name = "mailify-lib"
+description = "Identify if a mail address exists"
+authors = ["Thomas Zahner <thomas.zahner@protonmail.ch>"]
+homepage = "https://github.com/thomas-zahner/mailify"
+license = "Apache-2.0 OR MIT"
+readme = "../README.md"
+keywords = ["email", "checker", "smtp"]
 edition = "2024"
+version.workspace = true
 
 [dependencies]
 async-smtp = "0.10.2"

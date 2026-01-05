@@ -5,7 +5,7 @@
 
 use std::env::args;
 
-use mailify::check;
+use mailify_lib::check;
 
 #[tokio::main]
 async fn main() {

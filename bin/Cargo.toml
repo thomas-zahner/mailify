@@ -1,7 +1,14 @@
 [package]
-name = "bin"
+name = "mailify"
+description = "Identify if a mail address exists"
+authors = ["Thomas Zahner <thomas.zahner@protonmail.ch>"]
+homepage = "https://github.com/thomas-zahner/mailify"
+license = "Apache-2.0 OR MIT"
+readme = "../README.md"
+keywords = ["email", "checker", "smtp"]
 edition = "2024"
+version.workspace = true
 
 [dependencies]
-mailify = { path = "../lib" }
+mailify-lib = { path = "../lib", version = "0.1.0" }
 tokio = { version = "1.48.0", features = ["macros"] }
