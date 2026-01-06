@@ -70,7 +70,7 @@ impl From<Result> for CheckResult {
 /// There are situations where we cannot determine with
 /// certainty if an address exists. This is mostly due
 /// to blocklists and restrictive measures by email servers.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum UncertaintyReason {
     /// Request timed out.
     /// Unfortunately, ISPs commonly block outgoing port 25 traffic from their customers.
@@ -88,7 +88,7 @@ pub enum UncertaintyReason {
     DnsResolverError,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum FailureReason {
     /// The mail address format is invalid
     InvalidAddressFormat,
@@ -128,7 +128,7 @@ impl Display for FailureReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
             FailureReason::InvalidAddressFormat => {
-                "Invalid address format. Expected format: local-part@domain)".into()
+                "Invalid address format. Expected format: local-part@domain".into()
             }
             FailureReason::NoMxRecords => "No MX records found for domain".into(),
             FailureReason::NoSuchAddress => "Mail server rejects the address".into(),
