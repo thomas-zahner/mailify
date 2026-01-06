@@ -3,7 +3,7 @@
 
 #![warn(clippy::all, clippy::pedantic)]
 
-use std::{sync::LazyLock, time::Duration};
+use std::{fmt::Display, sync::LazyLock, time::Duration};
 
 pub(crate) mod heuristics;
 
@@ -25,6 +25,18 @@ pub enum CheckResult {
     Uncertain(UncertaintyReason),
     /// Email address does not exist
     Failure(FailureReason),
+}
+
+impl Display for CheckResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            CheckResult::Success => "Address exists".into(),
+            CheckResult::Uncertain(reason) => format!("Uncertain: {reason}"),
+            CheckResult::Failure(reason) => format!("Address does not exist: {reason}"),
+        };
+
+        write!(f, "{message}")
+    }
 }
 
 impl From<Result> for CheckResult {
@@ -86,6 +98,45 @@ pub enum FailureReason {
     NoSuchAddress,
     /// Generic IO error
     IoError(String),
+}
+
+impl Display for UncertaintyReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            UncertaintyReason::Timeout => {
+                "Connection timed out. This commonly happens if your ISP blocks outgoing SMTP traffic on port 25.".into()
+            }
+            UncertaintyReason::Blocklisted => "Mail server has blocklisted our requests.".into(),
+            UncertaintyReason::NegativeSmtpResponse(response) => {
+                let message  = response.message.join(" ");
+                let addendum = if message.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {message}")
+                };
+                format!("Unclassified negative SMTP response{addendum}")
+            }
+            UncertaintyReason::SmtpError(e) => format!("Unexpected SMPT error: {e}"),
+            UncertaintyReason::DnsResolverError => "Unexpected DNS resolution error".into(),
+        };
+
+        write!(f, "{message}")
+    }
+}
+
+impl Display for FailureReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            FailureReason::InvalidAddressFormat => {
+                "Invalid address format. Expected format: local-part@domain)".into()
+            }
+            FailureReason::NoMxRecords => "No MX records found for domain".into(),
+            FailureReason::NoSuchAddress => "Mail server rejects the address".into(),
+            FailureReason::IoError(e) => format!("IO error: {e}"),
+        };
+
+        write!(f, "{message}")
+    }
 }
 
 #[derive(Debug)]
