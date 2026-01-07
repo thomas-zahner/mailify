@@ -3,7 +3,7 @@
 
 #![warn(clippy::all, clippy::pedantic)]
 
-use std::{fmt::Display, sync::LazyLock, time::Duration};
+use std::{fmt::Display, time::Duration};
 
 pub(crate) mod heuristics;
 
@@ -175,12 +175,55 @@ pub struct Config {
     /// If a check exceeds the configured timeout duration
     /// it is aborted and resolves to [`CheckResult::Uncertain`] with [`UncertaintyReason::Timeout`].
     pub timeout: Option<Duration>,
+
+    /// Address used when preparing to send the mail. No mail is actually ever sent.
+    /// This value might be rejected by mail servers.
+    /// For example it can be rejected with the following reasons:
+    ///
+    /// - SPF rejection as per <https://www.rfc-editor.org/rfc/rfc7208>
+    /// - 4.1.8 Sender address rejected (<https://www.suped.com/knowledge/email-deliverability/troubleshooting/what-does-smtp-bounce-reason-418-bad-senders-system-address-domain-of-sender-address-does-not-re>)
+    /// - 5.7.27 Sender address has null MX (<https://www.rfc-editor.org/rfc/rfc7505#section-4.2>)
+    pub sender_address: EmailAddress,
+
+    /// Client domain, used as parameter of the EHLO message.
+    /// This value might be rejected by mail servers.
+    /// For example outlook.com returns 501 5.5.4 Invalid domain name.
+    pub client_domain: ClientId,
+}
+
+pub enum ClientBuildError {
+    InvalidEmailAddress,
+}
+
+impl Config {
+    /// Set the sender address
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the address string contains invalid characters
+    pub fn with_sender_address(
+        mut self,
+        address: String,
+    ) -> std::result::Result<Self, ClientBuildError> {
+        self.sender_address =
+            EmailAddress::new(address).map_err(|_| ClientBuildError::InvalidEmailAddress)?;
+        Ok(self)
+    }
+
+    /// Set the client domain
+    #[must_use]
+    pub fn with_client_domain(mut self, client_domain: String) -> Self {
+        self.client_domain = ClientId::Domain(client_domain);
+        self
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             timeout: Some(Duration::from_secs(10)),
+            sender_address: EmailAddress::new("me@thomaszahner.ch".into()).unwrap(),
+            client_domain: ClientId::Domain("example.com.".into()),
         }
     }
 }
@@ -212,7 +255,7 @@ async fn check_inner(mail: &str, config: &Config) -> Result {
     }
 
     let record = first_dns_record(domain).await?;
-    let future = verify_mail(mail, &record);
+    let future = verify_mail(mail, &record, config);
 
     if let Some(timeout) = config.timeout {
         time::timeout(timeout, future)
@@ -223,17 +266,7 @@ async fn check_inner(mail: &str, config: &Config) -> Result {
     }
 }
 
-/// Mail servers may respond with
-///
-/// - `4.1.8 Sender address rejected` (<https://www.suped.com/knowledge/email-deliverability/troubleshooting/what-does-smtp-bounce-reason-418-bad-senders-system-address-domain-of-sender-address-does-not-re>)
-/// - `5.7.27 Sender address has null MX` (<https://www.rfc-editor.org/rfc/rfc7505#section-4.2>)
-/// - SPF rejection as per <https://www.rfc-editor.org/rfc/rfc7208>
-static SENDER_ADDRESS: LazyLock<EmailAddress> =
-    LazyLock::new(|| EmailAddress::new("me@thomaszahner.ch".to_owned()).unwrap());
-
-static CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::Domain("example.com.".into()));
-
-async fn verify_mail(mail: &str, record: &MX) -> Result {
+async fn verify_mail(mail: &str, record: &MX, config: &Config) -> Result {
     const PORT: u16 = 25;
 
     let host = record.exchange();
@@ -241,11 +274,17 @@ async fn verify_mail(mail: &str, record: &MX) -> Result {
     let client = SmtpClient::new();
     let mut transport = SmtpTransport::new(client, stream).await?;
 
-    transport.get_mut().ehlo(CLIENT_ID.clone()).await?;
+    transport
+        .get_mut()
+        .ehlo(config.client_domain.clone())
+        .await?;
 
     transport
         .get_mut()
-        .command(MailCommand::new(Some(SENDER_ADDRESS.clone()), vec![]))
+        .command(MailCommand::new(
+            Some(config.sender_address.clone()),
+            vec![],
+        ))
         .await?;
 
     let mail = EmailAddress::new(mail.into()).map_err(|_| Error::InvalidAddressFormat)?;
@@ -308,6 +347,7 @@ mod tests {
     async fn timeout() {
         let result = Client::new(Config {
             timeout: Some(Duration::ZERO),
+            ..Default::default()
         })
         .check("a@gmail.com")
         .await;
