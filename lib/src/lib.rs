@@ -14,7 +14,7 @@ use async_smtp::{
     response::Response,
 };
 use hickory_resolver::{ResolveError, proto::rr::rdata::MX};
-use tokio::{io::BufStream, net::TcpStream, time::timeout};
+use tokio::{io::BufStream, net::TcpStream, time};
 
 /// Email check result
 #[derive(Debug, PartialEq)]
@@ -169,16 +169,42 @@ impl From<async_smtp::error::Error> for Error {
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
-const TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Check if the given email address exists
-/// and is setup to receive messages, without sending
-/// a message.
-pub async fn check(address: &str) -> CheckResult {
-    check_inner(address).await.into()
+#[derive(Clone, Debug)]
+/// Customise the behaviour of email checking
+pub struct Config {
+    /// If a check exceeds the configured timeout duration
+    /// it is aborted and resolves to [`CheckResult::Uncertain`] with [`UncertaintyReason::Timeout`].
+    pub timeout: Option<Duration>,
 }
 
-async fn check_inner(mail: &str) -> Result {
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            timeout: Some(Duration::from_secs(10)),
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct Client {
+    config: Config,
+}
+
+impl Client {
+    #[must_use]
+    pub const fn new(config: Config) -> Self {
+        Self { config }
+    }
+
+    /// Check if the given email address exists
+    /// and is setup to receive messages, without sending
+    /// a message.
+    pub async fn check(&self, address: &str) -> CheckResult {
+        check_inner(address, &self.config).await.into()
+    }
+}
+
+async fn check_inner(mail: &str, config: &Config) -> Result {
     let (local_part, domain) = mail.rsplit_once('@').ok_or(Error::InvalidAddressFormat)?;
 
     if local_part.is_empty() || domain.is_empty() {
@@ -186,9 +212,15 @@ async fn check_inner(mail: &str) -> Result {
     }
 
     let record = first_dns_record(domain).await?;
-    timeout(TIMEOUT, verify_mail(mail, &record))
-        .await
-        .map_err(|_| Error::Timeout)?
+    let future = verify_mail(mail, &record);
+
+    if let Some(timeout) = config.timeout {
+        time::timeout(timeout, future)
+            .await
+            .map_err(|_| Error::Timeout)?
+    } else {
+        future.await
+    }
 }
 
 /// Mail servers may respond with
@@ -255,9 +287,13 @@ async fn lookup_mx(domain: &str) -> Result<Vec<MX>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{CheckResult, FailureReason, UncertaintyReason};
+    use std::time::Duration;
 
-    use super::check;
+    use crate::{CheckResult, Client, Config, FailureReason, UncertaintyReason};
+
+    async fn check(address: &str) -> CheckResult {
+        Client::default().check(address).await
+    }
 
     #[tokio::test]
     async fn invalid_format() {
@@ -266,6 +302,17 @@ mod tests {
         assert_eq!(check("@").await, expected);
         assert_eq!(check("local-part@").await, expected);
         assert_eq!(check("@domain").await, expected);
+    }
+
+    #[tokio::test]
+    async fn timeout() {
+        let result = Client::new(Config {
+            timeout: Some(Duration::ZERO),
+        })
+        .check("a@gmail.com")
+        .await;
+
+        assert_eq!(result, CheckResult::Uncertain(UncertaintyReason::Timeout))
     }
 
     #[tokio::test]
