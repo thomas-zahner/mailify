@@ -11,6 +11,8 @@ const BLOCKLIST_WORDS: &[&str] = &[
     "spam",
     "abuse",
     "blocked",
+    "reputation",
+    "sbrs", // Sender base reputation score: https://www.cisco.com/c/en/us/td/docs/security/ces/user_guide/esa_user_guide_12-5/b_ESA_Admin_Guide_ces_12_5/b_ESA_Admin_Guide_chapter_0101.pdf
     // Companies
     "proofpoint",
     "spamhaus",
