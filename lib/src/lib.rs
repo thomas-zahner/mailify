@@ -3,7 +3,7 @@
 
 #![warn(clippy::all, clippy::pedantic)]
 
-use std::{fmt::Display, time::Duration};
+use std::{fmt::Display, str::FromStr, time::Duration};
 
 pub(crate) mod heuristics;
 
@@ -13,7 +13,7 @@ use async_smtp::{
     extension::ClientId,
     response::Response,
 };
-use hickory_resolver::{ResolveError, proto::rr::rdata::MX};
+use hickory_resolver::{Name, ResolveError, proto::rr::rdata::MX};
 use tokio::{io::BufStream, net::TcpStream, time};
 
 /// Email check result
@@ -51,7 +51,7 @@ impl From<Result> for CheckResult {
                     if e.is_no_records_found() {
                         Failure(FailureReason::NoMxRecords)
                     } else {
-                        Uncertain(UncertaintyReason::DnsResolverError)
+                        Uncertain(UncertaintyReason::DnsResolverError(e.to_string()))
                     }
                 }
                 Error::Smtp(e) => match e {
@@ -85,7 +85,7 @@ pub enum UncertaintyReason {
     /// Unexpected SMTP error
     SmtpError(String),
     /// Unexpected DNS resolution error
-    DnsResolverError,
+    DnsResolverError(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -117,7 +117,7 @@ impl Display for UncertaintyReason {
                 format!("Unclassified negative SMTP response{addendum}")
             }
             UncertaintyReason::SmtpError(e) => format!("Unexpected SMPT error: {e}"),
-            UncertaintyReason::DnsResolverError => "Unexpected DNS resolution error".into(),
+            UncertaintyReason::DnsResolverError(e) => format!("Unexpected DNS resolution error: {e}"),
         };
 
         write!(f, "{message}")
@@ -248,14 +248,9 @@ impl Client {
 }
 
 async fn check_inner(mail: &str, config: &Config) -> Result {
-    let (local_part, domain) = mail.rsplit_once('@').ok_or(Error::InvalidAddressFormat)?;
+    let host = get_host(mail).await?;
 
-    if local_part.is_empty() || domain.is_empty() {
-        return Err(Error::InvalidAddressFormat);
-    }
-
-    let record = first_dns_record(domain).await?;
-    let future = verify_mail(mail, &record, config);
+    let future = verify_mail(mail, &host, config);
 
     if let Some(timeout) = config.timeout {
         time::timeout(timeout, future)
@@ -266,10 +261,33 @@ async fn check_inner(mail: &str, config: &Config) -> Result {
     }
 }
 
-async fn verify_mail(mail: &str, record: &MX, config: &Config) -> Result {
+/// Roughly follows [RFC5322 section 3.4.1](https://www.rfc-editor.org/rfc/rfc5322#section-3.4.1).
+/// The RFC isn't followed strictly because this is not a format validation library.
+/// Encoding the RFC's full complexity would require additional effort, like supporting comments
+/// (CFWS) which isn't really used in the real world today.
+async fn get_host(mail: &str) -> Result<Name> {
+    let (local_part, domain) = mail.rsplit_once('@').ok_or(Error::InvalidAddressFormat)?;
+
+    // Handle surrounding FWS. Note that we don't handle CFWS.
+    let local_part = local_part.trim();
+    let domain = domain.trim();
+
+    if local_part.is_empty() || domain.is_empty() {
+        return Err(Error::InvalidAddressFormat);
+    }
+
+    if let Some(domain_literal) = domain.strip_prefix("[").and_then(|d| d.strip_suffix("]")) {
+        // No DNS lookup with domain literals
+        Name::from_str(domain_literal).map_err(|_| Error::InvalidAddressFormat)
+    } else {
+        let record = first_dns_record(domain).await?;
+        Ok(record.exchange().clone())
+    }
+}
+
+async fn verify_mail(mail: &str, host: &Name, config: &Config) -> Result {
     const PORT: u16 = 25;
 
-    let host = record.exchange();
     let stream = BufStream::new(TcpStream::connect(format!("{host}:{PORT}")).await?);
     let client = SmtpClient::new();
     let mut transport = SmtpTransport::new(client, stream).await?;
@@ -353,6 +371,21 @@ mod tests {
         .await;
 
         assert_eq!(result, CheckResult::Uncertain(UncertaintyReason::Timeout))
+    }
+
+    #[tokio::test]
+    async fn domain_literal_syntax() {
+        // $ dig tuta.com MX +short
+        // 0 mail.tutanota.de.
+        //
+        // $ host mail.tutanota.de.
+        // mail.tutanota.de has address 185.205.69.211
+
+        let result = check("hello@[185.205.69.211]").await;
+        assert!(matches!(
+            result,
+            CheckResult::Failure(FailureReason::NoSuchAddress) | CheckResult::Success
+        ));
     }
 
     #[tokio::test]
