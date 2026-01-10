@@ -189,6 +189,9 @@ pub struct Config {
     /// This value might be rejected by mail servers.
     /// For example outlook.com returns 501 5.5.4 Invalid domain name.
     pub client_domain: ClientId,
+
+    /// Port to use to connect to the SMTP mail server
+    pub port: u16,
 }
 
 pub enum ClientBuildError {
@@ -224,6 +227,7 @@ impl Default for Config {
             timeout: Some(Duration::from_secs(10)),
             sender_address: EmailAddress::new("me@thomaszahner.ch".into()).unwrap(),
             client_domain: ClientId::Domain("example.com.".into()),
+            port: 25,
         }
     }
 }
@@ -286,9 +290,9 @@ async fn get_host(mail: &str) -> Result<Name> {
 }
 
 async fn verify_mail(mail: &str, host: &Name, config: &Config) -> Result {
-    const PORT: u16 = 25;
+    let port = config.port;
 
-    let stream = BufStream::new(TcpStream::connect(format!("{host}:{PORT}")).await?);
+    let stream = BufStream::new(TcpStream::connect(format!("{host}:{port}")).await?);
     let client = SmtpClient::new();
     let mut transport = SmtpTransport::new(client, stream).await?;
 
@@ -370,7 +374,7 @@ mod tests {
         .check("a@gmail.com")
         .await;
 
-        assert_eq!(result, CheckResult::Uncertain(UncertaintyReason::Timeout))
+        assert_eq!(result, CheckResult::Uncertain(UncertaintyReason::Timeout));
     }
 
     #[tokio::test]
