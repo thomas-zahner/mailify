@@ -5,8 +5,10 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{Framed, LinesCodec};
 
+const PORT: u16 = 2525;
+
 async fn listen<R: Into<RequestResponseList>>(list: R) {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 2525));
+    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
     let listener = TcpListener::bind(addr).await.unwrap();
 
     match listener.accept().await {
@@ -82,60 +84,73 @@ mod tests {
 
     use tokio::{task, time::sleep};
 
-    use crate::listen;
-    use mailify_lib::{CheckResult, Client, Config};
+    use crate::{PORT, RequestResponseList, listen};
+    use mailify_lib::{CheckResult, Client, Config, FailureReason, UncertaintyReason};
 
     /// Default template for expected requets
     /// with their associated response
     macro_rules! default_template {
         ($final_message:expr) => {
-            [
-                ("EHLO [127.0.0.1]", "250 OK"),
-                ("EHLO example.com.", "250 OK"),
-                ("MAIL FROM:<me@thomaszahner.ch>", "250 OK"),
-                $final_message,
-            ]
-            .as_slice()
+            RequestResponseList::from(
+                [
+                    ("EHLO [127.0.0.1]", "250 OK"),
+                    ("EHLO example.com.", "250 OK"),
+                    ("MAIL FROM:<me@thomaszahner.ch>", "250 OK"),
+                    $final_message,
+                ]
+                .as_slice(),
+            )
         };
     }
 
-    async fn check(address: &str) -> CheckResult {
-        Client::new(Config {
-            port: 2525,
+    async fn check(address: &str, list: RequestResponseList, expected: CheckResult) {
+        let server = task::spawn(async move {
+            listen(list).await;
+        });
+
+        sleep(Duration::from_millis(100)).await; // Prevent IO error: connection refused
+
+        let result = Client::new(Config {
+            port: PORT,
             ..Default::default()
         })
         .check(address)
-        .await
+        .await;
+        assert_eq!(result, expected);
+
+        server.await.unwrap();
     }
 
     #[serial]
     #[tokio::test]
     async fn success() {
-        let server = task::spawn(async move {
-            listen(default_template!(("RCPT TO:<hello@[127.0.0.1]>", "250 OK"))).await;
-        });
-
-        sleep(Duration::from_millis(100)).await;
-        assert_eq!(check("hello@[127.0.0.1]").await, CheckResult::Success);
-        server.await.unwrap();
+        check(
+            "hello@[127.0.0.1]",
+            default_template!(("RCPT TO:<hello@[127.0.0.1]>", "250 OK")),
+            CheckResult::Success,
+        )
+        .await;
     }
 
     #[serial]
     #[tokio::test]
     async fn no_such_address() {
-        let server = task::spawn(async move {
-            listen(default_template!((
-                "RCPT TO:<hello@[127.0.0.1]>",
-                "550 No such user"
-            )))
-            .await;
-        });
+        check(
+            "hello@[127.0.0.1]",
+            default_template!(("RCPT TO:<hello@[127.0.0.1]>", "550 No such user")),
+            CheckResult::Failure(FailureReason::NoSuchAddress),
+        )
+        .await;
+    }
 
-        sleep(Duration::from_millis(100)).await;
-        assert_eq!(
-            check("hello@[127.0.0.1]").await,
-            CheckResult::Failure(mailify_lib::FailureReason::NoSuchAddress)
-        );
-        server.await.unwrap();
+    #[serial]
+    #[tokio::test]
+    async fn blocklisting() {
+        check(
+            "hello@[127.0.0.1]",
+            default_template!(("RCPT TO:<hello@[127.0.0.1]>", "554 Our amazing shiny AI powered abuse system did not like your request: Blocklisting in effect")),
+            CheckResult::Uncertain(UncertaintyReason::Blocklisted),
+        )
+        .await;
     }
 }
