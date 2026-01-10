@@ -35,11 +35,21 @@ const NO_SUCH_ADDRESS_WORDS: &[&str] = &[
     "double-checking the recipient",
 ];
 
+/// Textual heuristics when reverse DNS entries are expected
+const NO_REVERSE_HOSTNAME: &[&str] = &[
+    // hi@gmx.de - Uncertain: Unclassified negative SMTP response: gmx.net (mxgmx108) Nemesis ESMTP Service not available No SMTP service Bad DNS PTR resource record. For explanation visit https://postmaster.gmx.net/en/case?c=r0601&i=ip
+    "dns ptr",
+    // "4.7.1 Client host rejected: cannot find your reverse hostname",
+    "reverse hostname",
+];
+
 /// Handle transient and permanent error responses
 pub(crate) fn from_erroneous(response: Response) -> CheckResult {
     use CheckResult::{Failure, Success, Uncertain};
     if blocklisted(&response) {
         Uncertain(UncertaintyReason::Blocklisted)
+    } else if no_reverse_hostname_found(&response) {
+        Uncertain(UncertaintyReason::NoReverseHostname)
     } else if no_such_address(&response) {
         Failure(FailureReason::NoSuchAddress)
     } else if exists(&response) {
@@ -64,6 +74,24 @@ fn exists(response: &Response) -> bool {
         Severity::TransientNegativeCompletion | Severity::PermanentNegativeCompletion
     ) && code.category == Category::Connections
         && matches!(code.detail, Detail::Zero | Detail::One | Detail::Two)
+}
+
+fn no_reverse_hostname_found(response: &Response) -> bool {
+    let message = &response.message;
+
+    message_contains_word(message, NO_REVERSE_HOSTNAME)
+        || no_reverse_hostname_found_outlook(message)
+}
+
+fn no_reverse_hostname_found_outlook(message: &[String]) -> bool {
+    // Outlook/Hotmail error messages seems a bit generic.
+    // https://www.suped.com/knowledge/email-deliverability/troubleshooting/what-causes-a-501-554-invalid-domain-name-error-when-sending-emails-to-office-365
+    //
+    // Example
+    //
+    // hi@hotmail.com - Uncertain: Unclassified negative SMTP response: 5.5.4 Invalid domain name [SN1PEPF0002636D.namprd02.prod.outlook.com 2026-01-10T14:19:01.912Z 08DE4E5F1EB66B10]
+    message_contains_word(message, ["outlook.com"].as_slice()) // Hotmail & Outlook contain "outlook.com"
+        && message_contains_word(message, ["invalid domain name"].as_slice())
 }
 
 fn blocklisted(response: &Response) -> bool {

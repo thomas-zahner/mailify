@@ -80,6 +80,8 @@ pub enum UncertaintyReason {
     /// Server blocklisted our request.
     /// This normally happens because the server doesn't trust our IP address.
     Blocklisted,
+    /// Server expected to find a reverse domain name for our origin IP address.
+    NoReverseHostname,
     /// Got a negative SMTP response
     NegativeSmtpResponse(Response),
     /// Unexpected SMTP error
@@ -118,6 +120,7 @@ impl Display for UncertaintyReason {
             }
             UncertaintyReason::SmtpError(e) => format!("Unexpected SMPT error: {e}"),
             UncertaintyReason::DnsResolverError(e) => format!("Unexpected DNS resolution error: {e}"),
+            UncertaintyReason::NoReverseHostname => "Mail server expected our origin IP to have a DNS PTR for reverse lookup".into(),
         };
 
         write!(f, "{message}")
