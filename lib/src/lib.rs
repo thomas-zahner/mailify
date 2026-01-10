@@ -499,19 +499,22 @@ mod tests {
 
     #[tokio::test]
     async fn blocklisting() {
-        assert!(matches!(
-            check("thomas@outlook.com").await,
-            CheckResult::Uncertain(UncertaintyReason::NegativeSmtpResponse(_))
-        ));
-
-        assert!(matches!(
-            check("thomas@hotmail.com").await,
-            CheckResult::Uncertain(UncertaintyReason::NegativeSmtpResponse(_))
-        ));
-
         assert_eq!(
             check("thomas@bluewin.ch").await,
             CheckResult::Uncertain(UncertaintyReason::Blocklisted)
+        );
+    }
+
+    #[tokio::test]
+    async fn no_reverse_hostname() {
+        assert_eq!(
+            check("thomas@outlook.com").await,
+            CheckResult::Uncertain(UncertaintyReason::NoReverseHostname)
+        );
+
+        assert_eq!(
+            check("thomas@hotmail.com").await,
+            CheckResult::Uncertain(UncertaintyReason::NoReverseHostname)
         );
     }
 
