@@ -5,9 +5,9 @@ build: ## Run project locally
 .PHONY: lint
 lint: ## Run linter
 	cargo fmt --all -- --check
-	cargo clippy -- -D warnings
+	cargo clippy --all-targets -- -D warnings
 
 .PHONY: test
 test: ## Run tests
-	cargo test
+	cargo test --all-targets --all-features
 	cargo test --doc
