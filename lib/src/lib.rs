@@ -513,9 +513,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn false_negatives() {
-        // TODO? These are addresses that shoud ideally be detected as invalid.
-        // But it might be impossible if the services don't properly follow SMTP.
+    /// This test acts as documentation.
+    async fn lying_smtp_servers() {
+        // The addresses in the tests should not exist.
+        // However success is reported, when selecting the recipient.
+        // The domains might do this to make it hard to "discover" recipients.
+        // This is similar if a "catch-all" mail box is setup for a domain.
+        // However in a "catch-all" scenario the mail would actually arrive.
+        // In this case the server is rather lying about the existence.
+
+        // In an ideal world where SMTP servers aren't lying we would instead see:
+        // CheckResult::Failure(FailureReason::NoSuchAddress)
+
         assert_eq!(
             check("a309f2f034590l290@yahoo.com").await,
             CheckResult::Success
