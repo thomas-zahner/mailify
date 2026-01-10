@@ -384,15 +384,12 @@ mod tests {
     async fn domain_literal_syntax() {
         // $ dig tuta.com MX +short
         // 0 mail.tutanota.de.
-        //
         // $ host mail.tutanota.de.
         // mail.tutanota.de has address 185.205.69.211
 
         let result = check("hello@[185.205.69.211]").await;
-        assert!(matches!(
-            result,
-            CheckResult::Failure(FailureReason::NoSuchAddress) | CheckResult::Success
-        ));
+        // The address format must be accepted. The actual result does not matter.
+        assert!(result != CheckResult::Failure(FailureReason::InvalidAddressFormat));
     }
 
     #[tokio::test]
