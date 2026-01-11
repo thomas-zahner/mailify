@@ -10,5 +10,5 @@ edition = "2024"
 version.workspace = true
 
 [dependencies]
-mailify-lib = { path = "../lib", version = "0.1.0" }
+mailify-lib = { path = "../lib", version = "0.2.0" }
 tokio = { version = "1.48.0", features = ["macros"] }
