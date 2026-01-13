@@ -73,6 +73,12 @@ for the IP address used to connect to their server and reject requests if no
 can be found.
 In that case we can obtain no useful information, unless
 you create such a DNS record for your IP address.
+Below is a list of providers known to impose these restrictions.
+
+- outlook.com
+- hotmail.com
+- gmx.com, gmx.net (and all other TLDs like gmx.fr, gmx.es, gmx.ch, ...)
+- ... (probably much more, feel free to open up a PR)
 
 ## Lying SMTP servers
 
