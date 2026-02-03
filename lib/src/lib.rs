@@ -349,6 +349,15 @@ async fn lookup_mx(domain: &str) -> Result<Vec<MX>> {
     Ok(records)
 }
 
+/// Note that these real world tests are unstable.
+/// Depending on the network you run these tests can fail.
+/// This is mainly because ISPs and mail servers implement various restrictive measures.
+/// Take a look at the README for the technical background.
+/// They are still valuable for documentation purposes and should
+/// pass if you are running them on a "good" network.
+///
+/// The tests in integration_test.rs are reliable,
+/// as they are network independent.
 #[cfg(test)]
 mod tests {
     use std::time::Duration;

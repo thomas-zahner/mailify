@@ -1,3 +1,6 @@
+//! These tests are reliable as they are network independent.
+//! This is in contrast to the real-world tests in lib.rs.
+
 use futures::{SinkExt, StreamExt};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
