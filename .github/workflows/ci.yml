@@ -13,6 +13,7 @@ jobs:
           cargo clippy -- -D warnings
           # Skip tests affected by blocklisting on GitHub runners
           cargo test -- \
+            --skip lying_smtp_servers \
             --skip detects_my_domain_as_invalid \
             --skip endler \
             --skip tuta \
