@@ -67,7 +67,7 @@ If you are lucky, you might be offered a link to request an unban from the block
 ## Reverse DNS lookup
 
 Some SMTP servers perform a
-[reverse DNS lookup](https://en.wikipedia.org/wiki/Reverse_DNS_lookup#Records_other_than_PTR_records)
+[reverse DNS lookup](https://en.wikipedia.org/wiki/Reverse_DNS_lookup)
 for the IP address used to connect to their server and reject requests if no
 [PTR record](https://en.wikipedia.org/wiki/List_of_DNS_record_types#PTR)
 can be found.
